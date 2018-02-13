@@ -263,7 +263,8 @@ class KafkaClient(object):
             # as possible. So because of that, we do dns resolution upfront,
             # create a new BrokerConnection for each resolved sockaddr, and
             # attempt only a single connect loop before moving to the next sockaddr.
-            for afi, _, __, ___, (host, port) in dns_lookup(*unresolved_host):
+            for afi, _, __, ___, family in dns_lookup(*unresolved_host):
+                host, port = family[:2]
                 bootstrap = BrokerConnection(host, port, afi,
                                              state_change_callback=cb,
                                              node_id='bootstrap',
