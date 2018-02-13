@@ -250,20 +250,35 @@ class KafkaClient(object):
         else:
             metadata_request = MetadataRequest[1](None)
 
-        for host, port, afi in hosts:
-            log.debug("Attempting to bootstrap via node at %s:%s", host, port)
-            cb = functools.partial(WeakMethod(self._conn_state_change), 'bootstrap')
-            bootstrap = BrokerConnection(host, port, afi,
-                                         state_change_callback=cb,
-                                         node_id='bootstrap',
-                                         **self.config)
-            bootstrap.connect()
-            while bootstrap.connecting():
-                self._selector.select(1)
+        cb = functools.partial(WeakMethod(self._conn_state_change), 'bootstrap')
+        for unresolved_host in hosts:
+            log.debug("Attempting to bootstrap via node at %s", unresolved_host)
+
+            # Generally BrokerConnection handles dns lookups internally, cycling
+            # through all available resolved sockaddr's until a connection is
+            # made. But to handle intermittent networking issues, this cycle will
+            # go on indefinitely to support reconnections after brokers recover.
+            # But for bootstrapping, we want to try each resolved sockaddr only
+            # once so that we can get some socket connection started as quickly
+            # as possible. So because of that, we do dns resolution upfront,
+            # create a new BrokerConnection for each resolved sockaddr, and
+            # attempt only a single connect loop before moving to the next sockaddr.
+            for afi, _, __, ___, (host, port) in dns_lookup(*unresolved_host):
+                bootstrap = BrokerConnection(host, port, afi,
+                                             state_change_callback=cb,
+                                             node_id='bootstrap',
+                                             **self.config)
                 bootstrap.connect()
-            if not bootstrap.connected():
-                bootstrap.close()
-                continue
+                while bootstrap.connecting():
+                    self._selector.select(1)
+                    bootstrap.connect()
+                if bootstrap.connected():
+                    break
+                else:
+                    bootstrap.close()
+            else:
+                continue  # Try next unresolved_host
+
             future = bootstrap.send(metadata_request)
             while not future.is_done:
                 self._selector.select(1)
@@ -271,7 +286,8 @@ class KafkaClient(object):
                     f.success(r)
             if future.failed():
                 bootstrap.close()
-                continue
+                continue  # Try next unresolved_host
+
             self.cluster.update_metadata(future.value)
             log.info('Bootstrap succeeded: found %d brokers and %d topics.',
                      len(self.cluster.brokers()), len(self.cluster.topics()))
