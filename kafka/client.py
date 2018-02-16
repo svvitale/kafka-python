@@ -76,7 +76,7 @@ class SimpleClient(object):
             return conn
 
         timeout = time.time() + self.timeout
-        while time.time() < timeout and conn.connecting():
+        while time.time() < timeout:
             if conn.connect() is ConnectionStates.CONNECTED:
                 break
             else:
