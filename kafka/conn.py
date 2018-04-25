@@ -285,16 +285,19 @@ class BrokerConnection(object):
         afi, _, __, ___, sockaddr = self._gai.pop(0)
         return (afi, sockaddr)
 
-    def connect_blocking(self, timeout=float('inf')):
+    def connect_blocking(self, timeout=float('inf'), max_attempts=float('inf')):
         if self.connected():
             return True
         timeout += time.time()
+        attempt = 0
+
         # First attempt to perform dns lookup
         # note that the underlying interface, socket.getaddrinfo,
         # has no explicit timeout so we may exceed the user-specified timeout
-        while time.time() < timeout:
+        while time.time() < timeout and attempt < max_attempts:
             if self._dns_lookup():
                 break
+            attempt += 1
         else:
             return False
 

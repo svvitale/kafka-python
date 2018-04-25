@@ -295,6 +295,9 @@ class KafkaProducer(object):
         'sock_chunk_buffer_count': 1000,  # undocumented experimental option
         'reconnect_backoff_ms': 50,
         'reconnect_backoff_max_ms': 1000,
+        'reconnect_max_attempts': float('inf'),
+        'reconnect_timeout': float('inf'),
+        'raise_on_bootstrap_failure': False,
         'max_in_flight_requests_per_connection': 5,
         'security_protocol': 'PLAINTEXT',
         'ssl_context': None,

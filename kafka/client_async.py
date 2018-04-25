@@ -149,6 +149,9 @@ class KafkaClient(object):
         'connections_max_idle_ms': 9 * 60 * 1000,
         'reconnect_backoff_ms': 50,
         'reconnect_backoff_max_ms': 1000,
+        'reconnect_max_attempts': float('inf'),
+        'reconnect_timeout': float('inf'),
+        'raise_on_bootstrap_failure': False,
         'max_in_flight_requests_per_connection': 5,
         'receive_buffer_bytes': None,
         'send_buffer_bytes': None,
@@ -213,6 +216,16 @@ class KafkaClient(object):
 
         self._bootstrap(collect_hosts(self.config['bootstrap_servers']))
 
+        if self.config['raise_on_bootstrap_failure'] and self._bootstrap_fails != 0:
+            # Failed initial bootstrapping, raise an exception
+
+            if isinstance(self.config['bootstrap_servers'], six.string_types):
+                server_list = self.config['bootstrap_servers']
+            else:
+                server_list = ', '.join(self.config['bootstrap_servers'])
+
+            raise Errors.KafkaUnavailableError('Failed to bootstrap using server list: {}'.format(server_list))
+
         # Check Broker Version if not set explicitly
         if self.config['api_version'] is None:
             check_timeout = self.config['api_version_auto_timeout_ms'] / 1000
@@ -242,7 +255,8 @@ class KafkaClient(object):
                                          state_change_callback=cb,
                                          node_id='bootstrap',
                                          **self.config)
-            if not bootstrap.connect_blocking():
+            if not bootstrap.connect_blocking(timeout=self.config['reconnect_timeout'],
+                                              max_attempts=self.config['reconnect_max_attempts']):
                 bootstrap.close()
                 continue
             future = bootstrap.send(metadata_request)
